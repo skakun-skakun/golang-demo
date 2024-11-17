@@ -24,7 +24,7 @@ func TestRootHandler(t *testing.T) {
 	req, _ = http.NewRequest("GET", "/?fail=true", nil)
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Equal(t, "Something terrible happened", w.Body.String())
 
 	// Test case 3: Query parameter "html" is present
@@ -38,7 +38,7 @@ func TestRootHandler(t *testing.T) {
 	req, _ = http.NewRequest("GET", "/?html=true&fail=true", nil)
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Equal(t, "Something terrible happened", w.Body.String())
 
 	// Test case 5: Environment variable "VERSION" is set
