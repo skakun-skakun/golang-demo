@@ -5,10 +5,10 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      DB_ENDPOINT: "0.0.0.0"
+      DB_ENDPOINT: postgresdb
       DB_PORT: "5432"
       DB_USER: "postgres"
-      DB_PASS: "123456"
+      DB_PASS: "12345678"
       DB_NAME: "db"
     depends_on:
       - postgresql
@@ -16,21 +16,22 @@ services:
       - "8080:8080"
     networks:
       - demo-app-ntwrk
-#  nginx:
-#    image: nginx
-#    ports:
-#      - "8080:80"
+  nginx:
+    image: nginx
+    ports:
+      - "80:80"
   postgresql:
+    container_name: postgresdb
     restart: always
-    image: postgres
+    image: postgres:14.1
     volumes:
       - "postgres-data:/var/lib/postgresql/data:rw"
       - "./db_schema.sql:/docker-entrypoint-initdb.d/db_schema.sql"
     environment:
       POSTGRES_USER: "postgres"
-      POSTGRES_PASSWORD: "123456"
+      POSTGRES_PASSWORD: "12345678"
     ports:
-      - "5432:5432"
+      - "5555:5432"
     networks:
       - demo-app-ntwrk
 
