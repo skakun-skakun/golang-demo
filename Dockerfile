@@ -3,25 +3,24 @@ FROM golang
 RUN apt-get update
 RUN apt-get upgrade
 
-WORKDIR /usr/src/app
+ENV GO111MODULE=on \
+    CGO_ENABLED=0 \
+    GOOS=linux \
+    GOARCH=amd64
 
-ENV GOOS=linux
-ENV GOARCH=amd64
+WORKDIR /app
 
-#ARG DB_ENDPOINT
-#ARG DB_PORT
-#ARG DB_USER
-#ARG DB_PASS
-#ARG DB_NAME
-#
-#RUN apt install postgresql
-
+RUN go install github.com/air-verse/air@latest
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
 COPY . .
-#RUN psql
-RUN go build -v -o /usr/local/bin/app ./...
-#RUN chmod +x /urs/src/golang-demo
 
-CMD ["app"]
+EXPOSE 8080
+
+CMD ["air", "-c", ".air.toml"]
+
+#RUN go build -v -o /usr/local/bin/app ./...
+##RUN chmod +x /urs/src/golang-demo
+#
+#CMD ["app"]
