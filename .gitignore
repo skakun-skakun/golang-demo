@@ -1,1 +1,4 @@
+.idea
+terraform/.terraform
 /golang-demo
+terraform/test-key-pair.pem
