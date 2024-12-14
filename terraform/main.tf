@@ -93,6 +93,7 @@ resource "aws_vpc_security_group_ingress_rule" "allow_http" {
 }
 
 resource "aws_instance" "ec2" {
+  count = 2
   ami = "ami-075449515af5df0d1"
   instance_type = "t3.micro"
   subnet_id = aws_subnet.public_subnets[0].id
@@ -100,7 +101,7 @@ resource "aws_instance" "ec2" {
   vpc_security_group_ids = [aws_security_group.sg.id]
   associate_public_ip_address = true
   tags = {
-    Name = "EC2"
+    Name = "EC2 ${count.index+1}"
   }
   user_data = templatefile("script.sh", {rds_endpoint: element(split(":", aws_db_instance.pg.endpoint), 0)})
   user_data_replace_on_change = true
@@ -149,10 +150,66 @@ resource "aws_db_instance" "pg" {
   db_subnet_group_name = aws_db_subnet_group.pg_subnet_group.name
 }
 
-output "PublicIP" {
-  value = aws_instance.ec2.public_ip
+resource "aws_lb" "application-lb" {
+  name = "alb"
+  internal = false
+  ip_address_type = "ipv4"
+  load_balancer_type = "application"
+  security_groups = [aws_security_group.sg.id]
+  subnets = [
+    aws_subnet.public_subnets[0].id,
+    aws_subnet.public_subnets[1].id,
+    aws_subnet.public_subnets[2].id,
+  ]
+  tags = {
+    Name = "Apki Load Balancer"
+  }
+}
+
+resource "aws_lb_target_group" "target-group" {
+  health_check {
+    interval = 10
+    path = "/"
+    protocol = "HTTP"
+    timeout = 5
+    healthy_threshold = 5
+    unhealthy_threshold = 2
+  }
+  name = "target-group"
+  port = 80
+  protocol = "HTTP"
+  target_type = "instance"
+  vpc_id = aws_vpc.main.id
+}
+
+resource "aws_lb_listener" "alb-listener" {
+  load_balancer_arn = aws_lb.application-lb.arn
+  port = 80
+  protocol = "HTTP"
+  default_action {
+    target_group_arn = aws_lb_target_group.target-group.arn
+    type = "forward"
+  }
+}
+
+resource "aws_lb_target_group_attachment" "ec2_attach" {
+  count = length(aws_instance.ec2)
+  target_group_arn = aws_lb_target_group.target-group.arn
+  target_id        = aws_instance.ec2[count.index].id
+}
+
+output "PublicIP_1" {
+  value = aws_instance.ec2[0].public_ip
+}
+
+output "PublicIP_2" {
+  value = aws_instance.ec2[1].public_ip
 }
 
 output "RDSEndpoint" {
   value = aws_db_instance.pg.endpoint
+}
+
+output "ELB-dns-name" {
+  value = aws_lb.application-lb.dns_name
 }
