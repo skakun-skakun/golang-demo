@@ -26,6 +26,7 @@ func main() {
 
 	// Server
 	log.Println("Starting server...")
+	log.Println("Log to test hot reload")
 	router := gin.New()
 	router.GET("/fibonacci", fibonacciHandler)
 	router.POST("/video", videoPostHandler)
