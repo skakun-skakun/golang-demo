@@ -14,7 +14,7 @@ variable "public_subnet_cidrs" {
   default     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
 }
 
-resource "aws_vpc" "main" {
+resource "aws_vpc" "vpc" {
   cidr_block = "10.0.0.0/16"
 
   tags = {
@@ -24,7 +24,7 @@ resource "aws_vpc" "main" {
 
 resource "aws_subnet" "public_subnets" {
   count      = length(var.public_subnet_cidrs)
-  vpc_id     = aws_vpc.main.id
+  vpc_id     = aws_vpc.vpc.id
   cidr_block = element(var.public_subnet_cidrs, count.index)
   availability_zone = element(var.azs, count.index)
 
@@ -34,7 +34,7 @@ resource "aws_subnet" "public_subnets" {
 }
 
 resource "aws_internet_gateway" "gw" {
-  vpc_id = aws_vpc.main.id
+  vpc_id = aws_vpc.vpc.id
 
   tags = {
     Name = "VPC IG"
@@ -42,7 +42,7 @@ resource "aws_internet_gateway" "gw" {
 }
 
 resource "aws_route_table" "public_RT" {
-  vpc_id = aws_vpc.main.id
+  vpc_id = aws_vpc.vpc.id
 
   route {
     cidr_block = "0.0.0.0/0"
@@ -62,7 +62,7 @@ resource "aws_route_table_association" "public_subnet_links" {
 
 resource "aws_security_group" "sg" {
   name = "allow ssh and http"
-  vpc_id = aws_vpc.main.id
+  vpc_id = aws_vpc.vpc.id
 
   egress {
     from_port = 0
@@ -92,24 +92,41 @@ resource "aws_vpc_security_group_ingress_rule" "allow_http" {
   to_port = 80
 }
 
-resource "aws_instance" "ec2" {
-  count = 2
-  ami = "ami-075449515af5df0d1"
+resource "aws_launch_template" "ec2-launch" {
+  name_prefix = "trfmhw"
+  image_id = "ami-075449515af5df0d1"
   instance_type = "t3.micro"
-  subnet_id = aws_subnet.public_subnets[0].id
-  key_name = "test-key-pair"
-  vpc_security_group_ids = [aws_security_group.sg.id]
-  associate_public_ip_address = true
-  tags = {
-    Name = "EC2 ${count.index+1}"
+  user_data = base64encode(templatefile("script.sh", {rds_endpoint: element(split(":", aws_db_instance.pg.endpoint), 0)}))
+  network_interfaces {
+    associate_public_ip_address = true
+    device_index = 0
+    security_groups = [aws_security_group.sg.id]
   }
-  user_data = templatefile("script.sh", {rds_endpoint: element(split(":", aws_db_instance.pg.endpoint), 0)})
-  user_data_replace_on_change = true
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_autoscaling_group" "ec2-autoscale" {
+  name = "ec2-asg"
+  min_size = 1
+  max_size = 2
+  desired_capacity = 1
+  launch_template {
+    id = aws_launch_template.ec2-launch.id
+    version = aws_launch_template.ec2-launch.latest_version
+  }
+  vpc_zone_identifier = [
+    aws_subnet.public_subnets[0].id,
+    aws_subnet.public_subnets[1].id,
+    aws_subnet.public_subnets[2].id,
+  ]
 }
 
 resource "aws_security_group" "sg_pg" {
   name = "allow pg port"
-  vpc_id = aws_vpc.main.id
+  vpc_id = aws_vpc.vpc.id
 
   ingress {
     security_groups = [aws_security_group.sg.id]
@@ -153,7 +170,6 @@ resource "aws_db_instance" "pg" {
 resource "aws_lb" "application-lb" {
   name = "alb"
   internal = false
-  ip_address_type = "ipv4"
   load_balancer_type = "application"
   security_groups = [aws_security_group.sg.id]
   subnets = [
@@ -167,19 +183,10 @@ resource "aws_lb" "application-lb" {
 }
 
 resource "aws_lb_target_group" "target-group" {
-  health_check {
-    interval = 10
-    path = "/"
-    protocol = "HTTP"
-    timeout = 5
-    healthy_threshold = 5
-    unhealthy_threshold = 2
-  }
   name = "target-group"
   port = 80
   protocol = "HTTP"
-  target_type = "instance"
-  vpc_id = aws_vpc.main.id
+  vpc_id = aws_vpc.vpc.id
 }
 
 resource "aws_lb_listener" "alb-listener" {
@@ -192,24 +199,16 @@ resource "aws_lb_listener" "alb-listener" {
   }
 }
 
-resource "aws_lb_target_group_attachment" "ec2_attach" {
-  count = length(aws_instance.ec2)
-  target_group_arn = aws_lb_target_group.target-group.arn
-  target_id        = aws_instance.ec2[count.index].id
+resource "aws_autoscaling_attachment" "asc_lb_attach" {
+  autoscaling_group_name = aws_autoscaling_group.ec2-autoscale.name
+  lb_target_group_arn = aws_lb_target_group.target-group.arn
 }
 
-output "PublicIP_1" {
-  value = aws_instance.ec2[0].public_ip
-}
-
-output "PublicIP_2" {
-  value = aws_instance.ec2[1].public_ip
-}
 
 output "RDSEndpoint" {
   value = aws_db_instance.pg.endpoint
 }
 
-output "ELB-dns-name" {
+output "ALB-dns-name" {
   value = aws_lb.application-lb.dns_name
 }
